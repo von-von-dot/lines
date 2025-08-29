@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+  <title>Scanlines Mobile — léger (points)</title>
+  <style>
+    :root{--gap:10px;--ui:#111;--card:#1a1a1a}
+    *{box-sizing:border-box}
+    html,body{margin:0;padding:0;background:#000;color:#fff;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif}
+    #wrap{display:flex;flex-direction:column;min-height:100dvh}
+    #controls{height:34vh;overflow:auto;background:var(--ui);padding:var(--gap);display:flex;flex-wrap:wrap;gap:var(--gap);justify-content:center;align-content:flex-start}
+    .card{background:var(--card);border-radius:12px;padding:8px;display:flex;flex-direction:column;align-items:center;gap:6px}
+    .row{display:flex;flex-wrap:wrap;gap:10px;justify-content:center;align-items:center}
+    label{font-size:12px;opacity:.9}
+    input[type="range"]{width:120px}
+    button,.chip{background:#222;color:#fff;border:1px solid #333;border-radius:10px;padding:8px 12px;font-size:14px}
+    .chip{display:inline-flex;gap:8px;align-items:center}
+    #stage{height:66vh;display:flex;align-items:center;justify-content:center;background:#000}
+    canvas{max-width:100%;height:100%;display:block}
+    #msg{position:absolute;color:#777}
+  </style>
+</head>
+<body>
+<div id="wrap">
+  <!-- MENU / CONTROLS (top 1/3) -->
+  <div id="controls">
+    <div class="row" style="width:100%;justify-content:center">
+      <span class="chip">Source :
+        <label><input type="radio" name="src" id="srcCam" checked> Caméra</label>
+        <label><input type="radio" name="src" id="srcImg"> Image</label>
+      </span>
+      <button id="switchBtn">🔄 Switch caméra</button>
+      <label class="chip">📷 Charger une image<input id="fileInput" type="file" accept="image/*" style="display:none"></label>
+      <button id="saveBtn">📸 Enregistrer</button>
+      <label class="chip"><input type="checkbox" id="animate"> 🎞️ Animation</label>
+      <label class="chip"><input type="checkbox" id="negative"> 🌓 Négatif</label>
+      <span class="chip">Palette :
+        <label><input type="checkbox" id="cR" checked> Rouge</label>
+        <label><input type="checkbox" id="cV"> Vert</label>
+        <label><input type="checkbox" id="cB"> Bleu</label>
+        <label><input type="checkbox" id="cJ"> Jaune</label>
+      </span>
+    </div>
+    <div class="row">
+      <div class="card"><label>Contraste</label><input id="contrast" type="range" min="0" max="255" value="110"></div>
+      <div class="card"><label>Intensité</label><input id="intensity" type="range" min="0" max="20" step="0.1" value="6"></div>
+      <div class="card"><label>Sensibilité</label><input id="sensitivity" type="range" min="0.1" max="10" step="0.1" value="1.2"></div>
+      <div class="card"><label>Détail</label><input id="detail" type="range" min="1" max="10" value="3"></div>
+      <div class="card"><label>Épaisseur</label><input id="stroke" type="range" min="0.5" max="8" step="0.1" value="1.3"></div>
+      <div class="card"><label>Rouge</label><input id="red" type="range" min="0" max="1" step="0.01" value="0.2126"></div>
+      <div class="card"><label>Vert</label><input id="green" type="range" min="0" max="1" step="0.01" value="0.7152"></div>
+      <div class="card"><label>Bleu</label><input id="blue" type="range" min="0" max="1" step="0.01" value="0.0722"></div>
+      <div class="card"><label>Points (1 par défaut)</label><input id="points" type="range" min="0" max="1" step="0.01" value="1"></div>
+      <div class="card"><label>Diagonale</label><input id="diagonal" type="range" min="0" max="1" step="0.01" value="0"></div>
+      <div class="card"><label>Circulaire</label><input id="circular" type="range" min="0" max="1" step="0.01" value="0"></div>
+    </div>
+  </div>
+
+  <!-- IMAGE ZONE (bottom 2/3) -->
+  <div id="stage"><div id="msg">Autorise la caméra ou charge une image</div></div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.0/p5.min.js"></script>
+<script>
+  let cam=null, img=null;
+  let useCamera = true;
+  let facing = "environment";
+  let animate=false, negative=false, animationOffset=0;
+  const ui={};
+
+  function el(id){ return document.getElementById(id); }
+
+  function startCamera(){
+    if (cam) { cam.remove(); cam=null; }
+    try {
+      cam = createCapture({ video: { facingMode: { exact: facing } }, audio:false });
+    } catch(e) {
+      cam = createCapture({ video: { facingMode: facing }, audio:false });
+    }
+    cam.elt.setAttribute('playsinline','');
+    cam.elt.muted = true;
+    cam.size(320,240); // léger mais suffisant
+    cam.hide();
+  }
+
+  function setup(){
+    pixelDensity(1);
+    const stage = el('stage');
+    const c = createCanvas(stage.clientWidth, stage.clientHeight);
+    c.parent('stage');
+    background(0);
+    startCamera();
+
+    // Bind UI (sans p5.dom, plus léger)
+    ['contrast','intensity','sensitivity','detail','stroke','red','green','blue','points','diagonal','circular'].forEach(id=>ui[id]=el(id));
+    el('saveBtn').onclick = ()=>saveCanvas('scan_mobile_points','png');
+    el('switchBtn').onclick = ()=>{ facing = (facing==='user')?'environment':'user'; if(useCamera) startCamera(); };
+    el('animate').onchange = e=> animate=e.target.checked;
+    el('negative').onchange = e=> negative=e.target.checked;
+
+    el('srcCam').onchange = e=>{ if(e.target.checked){ useCamera=true; startCamera(); } };
+    el('srcImg').onchange = e=>{ if(e.target.checked){ useCamera=false; if(cam){cam.remove(); cam=null;} } };
+    el('fileInput').onchange = (e)=>{
+      const f = e.target.files[0]; if(!f) return;
+      const url = URL.createObjectURL(f);
+      loadImage(url, i=>{ img=i; el('srcImg').checked=true; el('srcCam').checked=false; useCamera=false; el('msg').textContent=''; });
+    };
+
+    window.addEventListener('resize', ()=>{
+      const st=el('stage'); resizeCanvas(st.clientWidth, st.clientHeight);
+    });
+  }
+
+  function draw(){
+    background(negative?255:0);
+    strokeWeight(parseFloat(ui.stroke.value));
+    noFill();
+
+    // Choix de la source + accès direct au buffer pixels
+    let src=null, pix=null, w=0, h=0;
+    if (useCamera && cam && cam.width>0){
+      el('msg').textContent='';
+      cam.loadPixels();
+      src = cam; pix = cam.pixels; w=cam.width; h=cam.height;
+    } else if (!useCamera && img){
+      img.loadPixels();
+      src = img; pix = img.pixels; w=img.width; h=img.height;
+    } else {
+      return;
+    }
+
+    const detail = Math.max(1, parseInt(ui.detail.value));
+    const rw = parseFloat(ui.red.value), gw=parseFloat(ui.green.value), bw=parseFloat(ui.blue.value);
+    const contrast = parseFloat(ui.contrast.value);
+    const intensity = parseFloat(ui.intensity.value);
+    const sens = parseFloat(ui.sensitivity.value);
+    const diag = parseFloat(ui.diagonal.value);
+    const circ = parseFloat(ui.circular.value);
+    const points = parseFloat(ui.points.value); // reste dispo, mais défaut = 1 (points)
+
+    if (animate) animationOffset += 0.05;
+
+    for (let x = 1; x < w-1; x += detail){
+      if (points <= 0.5) beginShape();
+      for (let y = 1; y < h-1; y++){
+        // lecture rapide du buffer
+        const i = (x + y*w)*4;
+        const r = pix[i], g = pix[i+1], b = pix[i+2];
+        const br = r*rw + g*gw + b*bw;
+
+        // gradients (évitons get(), restons sur le buffer)
+        const i1 = (x+1 + y*w)*4, i2 = (x-1 + y*w)*4;
+        const i3 = (x + (y+1)*w)*4, i4 = (x + (y-1)*w)*4;
+        const dx = (pix[i1]*rw + pix[i1+1]*gw + pix[i1+2]*bw) - (pix[i2]*rw + pix[i2+1]*gw + pix[i2+2]*bw);
+        const dy = (pix[i3]*rw + pix[i3+1]*gw + pix[i3+2]*bw) - (pix[i4]*rw + pix[i4+1]*gw + pix[i4+2]*bw);
+        const curve = (dx*dx + dy*dy) * sens;
+        const offset = map(curve, 0, 255*255, -intensity, intensity);
+
+        const baseX = map(x, 0, w, 0, width);
+        const baseY = map(y, 0, h, 0, height);
+        const xDraw = baseX + offset + diag * (y - h/2) * 0.3;
+        const yDraw = baseY + offset + circ * Math.sin(dist(x,y,w/2,h/2)*0.1 + animationOffset) * 5.0;
+
+        setStrokeColor(br, negative); // palette + négatif
+
+        if (br > contrast){
+          // Par défaut : POINTS
+          if (points > 0.5) point(xDraw, yDraw);
+          else vertex(xDraw, yDraw);
+        }
+      }
+      if (points <= 0.5) endShape();
+    }
+  }
+
+  function paletteColors(){
+    const cols=[];
+    if (el('cR').checked) cols.push(color(255,40,40));
+    if (el('cV').checked) cols.push(color(40,220,120));
+    if (el('cB').checked) cols.push(color(40,140,255));
+    if (el('cJ').checked) cols.push(color(255,210,40));
+    return cols;
+  }
+
+  function setStrokeColor(br, negativeMode){
+    const cols = paletteColors();
+    if (cols.length===0){ stroke(negativeMode?0:255); return; }
+    const idx = Math.min(cols.length-1, Math.floor(map(br,0,255,0,cols.length)));
+    const c = cols[idx];
+    if (!negativeMode) stroke(c);
+    else stroke(255-red(c), 255-green(c), 255-blue(c));
+  }
+</script>
+</body>
+</html>
