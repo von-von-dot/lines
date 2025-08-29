@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+  <title>Scanlines Mobile (Caméra + Image)</title>
+  <style>
+    :root{--ui-bg:#111;--ui-fg:#fff;--gap:10px;}
+    *{box-sizing:border-box}
+    html,body{margin:0;padding:0;background:#000;color:#fff;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif}
+    #app{display:flex;flex-direction:column;min-height:100dvh;align-items:center}
+    #stage{width:100%;height:65dvh;display:flex;align-items:center;justify-content:center;background:#000;position:relative}
+    canvas{display:block;max-width:100%;height:100%;touch-action:none}
+    #controls{width:100%;background:var(--ui-bg);padding:var(--gap);display:flex;flex-wrap:wrap;gap:var(--gap);justify-content:center;position:sticky;bottom:0}
+    .group{display:flex;flex-direction:column;align-items:center;gap:6px;background:#1a1a1a;border-radius:12px;padding:8px}
+    .row{display:flex;flex-wrap:wrap;gap:10px;justify-content:center;align-items:center}
+    label.sm{font-size:12px;opacity:.85}
+    input[type="range"]{width:120px}
+    button,.chip{background:#222;color:#fff;border:1px solid #333;border-radius:10px;padding:8px 12px;font-size:14px}
+    button:active{transform:scale(.98)}
+    .chip{display:inline-flex;gap:8px;align-items:center}
+    #toast{position:fixed;top:10px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,.7);padding:8px 12px;border-radius:999px;font-size:12px;opacity:0;transition:opacity .3s}
+    #toast.show{opacity:1}
+  </style>
+</head>
+<body>
+<div id="app">
+  <div id="stage"></div>
+
+  <div id="controls">
+    <div class="row" style="width:100%;justify-content:center">
+      <span class="chip">
+        Source :
+        <label><input type="radio" name="src" id="srcCam" checked /> Caméra</label>
+        <label><input type="radio" name="src" id="srcImg" /> Image</label>
+      </span>
+
+      <button id="switchBtn">🔄 Switch caméra</button>
+      <label class="chip">
+        📷 Charger une image
+        <input id="fileInput" type="file" accept="image/*" style="display:none">
+      </label>
+      <button id="saveBtn">📸 Enregistrer</button>
+      <label class="chip"><input type="checkbox" id="animate"> 🎞️ Animation</label>
+    </div>
+
+    <div class="row">
+      <div class="group">
+        <label class="sm">Contraste</label>
+        <input id="contrast" type="range" min="0" max="255" value="127">
+      </div>
+      <div class="group">
+        <label class="sm">Intensité</label>
+        <input id="intensity" type="range" min="0" max="20" step="0.1" value="5">
+      </div>
+      <div class="group">
+        <label class="sm">Sensibilité</label>
+        <input id="sensitivity" type="range" min="0.1" max="10" step="0.1" value="1">
+      </div>
+      <div class="group">
+        <label class="sm">Détail</label>
+        <input id="detail" type="range" min="1" max="10" value="3">
+      </div>
+      <div class="group">
+        <label class="sm">Épaisseur</label>
+        <input id="stroke" type="range" min="0.5" max="10" step="0.1" value="1.5">
+      </div>
+      <div class="group">
+        <label class="sm">Rouge</label>
+        <input id="red" type="range" min="0" max="1" step="0.01" value="0.2126">
+      </div>
+      <div class="group">
+        <label class="sm">Vert</label>
+        <input id="green" type="range" min="0" max="1" step="0.01" value="0.7152">
+      </div>
+      <div class="group">
+        <label class="sm">Bleu</label>
+        <input id="blue" type="range" min="0" max="1" step="0.01" value="0.0722">
+      </div>
+      <div class="group">
+        <label class="sm">Points</label>
+        <input id="points" type="range" min="0" max="1" step="0.01" value="0">
+      </div>
+      <div class="group">
+        <label class="sm">Diagonale</label>
+        <input id="diagonal" type="range" min="0" max="1" step="0.01" value="0">
+      </div>
+      <div class="group">
+        <label class="sm">Circulaire</label>
+        <input id="circular" type="range" min="0" max="1" step="0.01" value="0">
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.0/p5.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.0/addons/p5.dom.min.js"></script>
+<script>
+  let cam, img;
+  let useCamera = true;
+  let facing = "environment";
+  let animate = false;
+  let animationOffset = 0;
+
+  const ui = {};
+  function $(id){ return document.getElementById(id); }
+  function toast(msg){ const t=$('toast'); t.textContent=msg; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),1200); }
+
+  function startCamera(){
+    if (cam) { cam.remove(); cam = null; }
+    try {
+      cam = createCapture({ video: { facingMode: { exact: facing } }, audio: false }, () => toast(facing==="user"?"Caméra avant":"Caméra arrière"));
+    } catch(e){
+      cam = createCapture({ video: { facingMode: facing }, audio: false });
+    }
+    cam.size(320, 240);
+    cam.hide();
+  }
+
+  function preload(){}
+
+  function setup(){
+    pixelDensity(1);
+    const stage = document.getElementById('stage');
+    const c = createCanvas(stage.clientWidth, stage.clientHeight);
+    c.parent('stage');
+    background(0);
+    startCamera();
+
+    // Hook UI
+    ui.contrast = $('contrast'); ui.intensity = $('intensity'); ui.sensitivity = $('sensitivity');
+    ui.detail = $('detail'); ui.stroke = $('stroke');
+    ui.red = $('red'); ui.green = $('green'); ui.blue = $('blue');
+    ui.points = $('points'); ui.diagonal = $('diagonal'); ui.circular = $('circular');
+
+    $('animate').addEventListener('change', e => { animate = e.target.checked; });
+    $('saveBtn').addEventListener('click', () => saveCanvas('scan_mobile', 'png'));
+    $('switchBtn').addEventListener('click', () => { facing = (facing==="user")?"environment":"user"; startCamera(); });
+
+    $('srcCam').addEventListener('change', e => { if(e.target.checked){ useCamera = true; startCamera(); }});
+    $('srcImg').addEventListener('change', e => { if(e.target.checked){ useCamera = false; if (cam) { cam.remove(); cam=null; } }});
+    $('fileInput').addEventListener('change', (e) => {
+      const file = e.target.files[0]; if(!file) return;
+      const url = URL.createObjectURL(file);
+      loadImage(url, i => { img = i; toast("Image chargée"); }, err => toast("Erreur chargement"));
+      $('srcImg').checked = true; useCamera = false; if (cam) { cam.remove(); cam=null; }
+    });
+
+    window.addEventListener('resize', onResize);
+  }
+
+  function onResize(){
+    const stage = document.getElementById('stage');
+    resizeCanvas(stage.clientWidth, stage.clientHeight);
+  }
+
+  function draw(){
+    background(0);
+    stroke(255);
+    strokeWeight(parseFloat(ui.stroke.value));
+    noFill();
+
+    let src = null;
+    if (useCamera && cam){
+      cam.loadPixels();
+      src = cam;
+    } else if (!useCamera && img){
+      img.loadPixels();
+      src = img;
+    } else {
+      return;
+    }
+
+    const detail = Math.max(1, parseInt(ui.detail.value));
+    const rw = parseFloat(ui.red.value), gw = parseFloat(ui.green.value), bw = parseFloat(ui.blue.value);
+    const contrast = parseFloat(ui.contrast.value);
+    const intensity = parseFloat(ui.intensity.value);
+    const sens = parseFloat(ui.sensitivity.value);
+    const points = parseFloat(ui.points.value);
+    const diag = parseFloat(ui.diagonal.value);
+    const circ = parseFloat(ui.circular.value);
+
+    if (animate) animationOffset += 0.05;
+
+    // Adapter l'image à la taille du canvas (mapping coordonné)
+    const srcW = src.width, srcH = src.height;
+
+    for (let x = 1; x < srcW - 1; x += detail) {
+      if (points <= 0.5) beginShape();
+      for (let y = 1; y < srcH - 1; y++) {
+        const br = weightedAt(src, x, y, rw, gw, bw);
+
+        const dx = weightedAt(src, x+1, y, rw, gw, bw) - weightedAt(src, x-1, y, rw, gw, bw);
+        const dy = weightedAt(src, x, y+1, rw, gw, bw) - weightedAt(src, x, y-1, rw, gw, bw);
+        const curve = (dx*dx + dy*dy) * sens;
+        const offset = map(curve, 0, 255*255, -intensity, intensity);
+
+        const baseX = map(x, 0, srcW, 0, width);
+        const baseY = map(y, 0, srcH, 0, height);
+        const diagOffset = diag * (y - srcH/2) * 0.3;
+        const circOffset = circ * Math.sin(dist(x, y, srcW/2, srcH/2) * 0.1 + animationOffset) * 5.0;
+
+        const xDraw = baseX + offset + diagOffset;
+        const yDraw = baseY + offset + circOffset;
+
+        if (br > contrast) {
+          if (points > 0.5) point(xDraw, yDraw);
+          else vertex(xDraw, yDraw);
+        }
+      }
+      if (points <= 0.5) endShape();
+    }
+  }
+
+  function weightedAt(src, x, y, rw, gw, bw){
+    // p5.Image / Video expose get(x,y) même après loadPixels()
+    const c = src.get(x, y);
+    return red(c)*rw + green(c)*gw + blue(c)*bw;
+  }
+</script>
+</body>
+</html>
